@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Editor</title>
+<meta name="description" content="แก้ข้อความทีละชั้นและเส้นตารางใน PDF บนเบราว์เซอร์ ไฟล์ไม่ถูกส่งออกจากเครื่อง">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="toolbar">
+  <div class="group">
+    <label class="btn primary" title="เปิดไฟล์ PDF">
+      <input type="file" id="file" accept="application/pdf,.pdf" hidden>เปิดไฟล์
+    </label>
+    <button class="btn" id="save" disabled title="ดาวน์โหลดไฟล์ที่แก้แล้ว (ไฟล์ต้นฉบับไม่ถูกแก้)">บันทึก</button>
+    <button class="btn" id="undo" disabled title="ย้อนกลับ (Ctrl+Z / ⌘Z)">↶ ย้อนกลับ</button>
+  </div>
+  <div class="group">
+    <button class="btn icon" id="prev" disabled title="หน้าก่อน">‹</button>
+    <span id="pageinfo" class="muted">–</span>
+    <button class="btn icon" id="next" disabled title="หน้าถัดไป">›</button>
+  </div>
+  <div class="group">
+    <button class="btn icon" id="zoomout" title="ย่อ">−</button>
+    <span id="zoominfo" class="muted">150%</span>
+    <button class="btn icon" id="zoomin" title="ขยาย">+</button>
+  </div>
+  <div class="group seg" role="tablist">
+    <button class="btn on" id="mode-text" role="tab">ข้อความ</button>
+    <button class="btn" id="mode-line" role="tab">เส้นตาราง</button>
+  </div>
+  <div class="group right">
+    <button class="btn" id="fontsbtn" title="จัดการฟอนต์">ฟอนต์…</button>
+  </div>
+</header>
+
+<main>
+  <section id="viewer">
+    <div id="empty">
+      <div class="drop">
+        <p class="big">ลากไฟล์ PDF มาวางที่นี่</p>
+        <p>หรือกด <b>เปิดไฟล์</b> ด้านบน</p>
+        <p class="muted small">ไฟล์ถูกแก้ในเบราว์เซอร์นี้เท่านั้น ไม่ถูกส่งขึ้นอินเทอร์เน็ต</p>
+      </div>
+    </div>
+    <div id="pagewrap" hidden>
+      <canvas id="canvas"></canvas>
+      <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+
+  <aside id="side">
+    <div id="panel-text">
+      <h3>ข้อความที่พบ <span class="muted small">(บนสุด = ชั้นบนสุด)</span></h3>
+      <ul id="spanlist" class="list"><li class="muted small">คลิกที่ข้อความบนหน้า หรือลากกรอบ</li></ul>
+
+      <label class="lbl">ข้อความเดิม</label>
+      <div id="oldtext" class="oldtext"></div>
+
+      <label class="lbl" for="newtext">ข้อความใหม่</label>
+      <textarea id="newtext" rows="4"></textarea>
+
+      <div class="row">
+        <label>ขนาด <input type="number" id="size" min="4" max="96" step="0.5" value="11"></label>
+        <label>สี <input type="color" id="color" value="#000000"></label>
+      </div>
+
+      <label class="chk"><input type="checkbox" id="autofont" checked> ใช้ฟอนต์เดิมของข้อความ (หาให้อัตโนมัติ)</label>
+      <div class="row">
+        <label class="grow">ฟอนต์สำรอง / ฟอนต์ที่เลือกเอง
+          <select id="manualfont"></select>
+        </label>
+      </div>
+      <div id="fontnote" class="note"></div>
+
+      <label class="chk"><input type="checkbox" id="erase" checked> ลบข้อความเดิม</label>
+      <button class="btn primary wide" id="apply" disabled>ใช้การแก้ไข</button>
+      <p class="help">คลิกที่ข้อความ (หรือลากกรอบ) → เลือกชิ้นในรายการ → พิมพ์ข้อความใหม่ → ใช้การแก้ไข<br>
+        ข้อความซ้อนกันจะแสดงทุกชั้น เลือกแก้ได้ทีละชั้น · เว้นข้อความใหม่ว่างไว้ = ลบอย่างเดียว</p>
+    </div>
+
+    <div id="panel-line" hidden>
+      <h3>เส้นที่เลือก</h3>
+      <p id="lineinfo" class="muted">ยังไม่ได้เลือกเส้น</p>
+      <div class="row">
+        <label>ความหนา (pt) <input type="number" id="lw" min="0.1" max="20" step="0.25" value="1"></label>
+        <label>สี <input type="color" id="lcolor" value="#000000"></label>
+      </div>
+      <button class="btn wide" id="linestyle" disabled>ใช้ความหนา/สีนี้กับเส้นที่เลือก</button>
+      <button class="btn wide danger" id="linedel" disabled>ลบเส้นที่เลือก</button>
+      <label class="chk"><input type="checkbox" id="group" checked> เลือกทั้งแนวเส้น (ท่อนที่ต่อกัน)</label>
+      <label class="chk"><input type="checkbox" id="stretch" checked> เส้นที่มาชน ยืด/หดตามเมื่อย้าย</label>
+      <label class="chk"><input type="checkbox" id="addline"> เพิ่มเส้นใหม่ (ลากบนหน้า)</label>
+      <p class="help">• คลิกที่เส้นเพื่อเลือก (เส้นที่แก้ได้เป็นสีฟ้า)<br>
+        • ลากเส้นที่เลือกเพื่อย้าย หรือกดลูกศรเพื่อขยับทีละ 0.5 pt<br>
+        • ปรับความหนา/สี แล้วกดปุ่มใช้<br>
+        • ติ๊ก “เพิ่มเส้นใหม่” แล้วลากเพื่อวาดเส้นตรง<br>
+        แก้ได้เฉพาะเส้นที่เป็นลายเส้นจริงใน PDF ตารางที่เป็นรูปภาพ/ไฟล์สแกนเลือกเส้นไม่ได้</p>
+    </div>
+  </aside>
+</main>
+
+<footer id="status" class="muted">กำลังเตรียมโปรแกรม…</footer>
+
+<div id="loading">
+  <div class="card">
+    <p id="loadtext">กำลังเตรียมโปรแกรม…</p>
+    <div class="bar"><div id="loadbar"></div></div>
+    <p class="muted small">ครั้งแรกต้องดาวน์โหลดประมาณ 30 MB หลังจากนั้นเปิดได้ทันทีแม้ไม่มีอินเทอร์เน็ต<br>
+      เปิดไฟล์รอไว้ก่อนได้เลย</p>
+  </div>
+</div>
+
+<dialog id="fontsdlg">
+  <form method="dialog">
+    <h3>ฟอนต์</h3>
+    <p class="small">เบราว์เซอร์อ่านฟอนต์ในเครื่องไม่ได้ โปรแกรมจะใช้ฟอนต์ตามลำดับนี้:</p>
+    <ol class="small">
+      <li>ฟอนต์ที่คุณเพิ่มไว้ (ชื่อตรงกับฟอนต์เดิมของข้อความ)</li>
+      <li>ฟอนต์ที่ฝังใน PDF (ถ้ามีตัวอักษรครบ)</li>
+      <li>ฟอนต์สำรอง Sarabun ที่มากับโปรแกรม</li>
+    </ol>
+    <p class="small">เพิ่มไฟล์ .ttf / .otf / .ttc เช่น Cordia New, TH Sarabun New (Windows: โฟลเดอร์ C:\Windows\Fonts · Mac: แอป Font Book → แสดงใน Finder)
+      ฟอนต์ถูกเก็บในเบราว์เซอร์นี้เท่านั้น</p>
+    <ul id="fontlist" class="list"></ul>
+    <div class="row">
+      <label class="btn primary">เพิ่มฟอนต์…<input type="file" id="fontfile" accept=".ttf,.otf,.ttc" multiple hidden></label>
+      <button class="btn" value="close">ปิด</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
